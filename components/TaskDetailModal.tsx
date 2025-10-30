@@ -10,39 +10,26 @@ interface TaskDetailModalProps {
   currentUser: User;
 }
 
-const formatTimeToHHMMSS = (totalSeconds: number): string => {
-  const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-  const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-  const seconds = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
-};
-
-const parseHHMMSSToSeconds = (timeStr: string): number => {
-  const parts = timeStr.split(':');
-  const hours = parseInt(parts[0], 10) || 0;
-  const minutes = parseInt(parts[1], 10) || 0;
-  const seconds = parseInt(parts[2], 10) || 0;
-  return hours * 3600 + minutes * 60 + seconds;
-};
-
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
   const [isOpen, setIsOpen] = useState(true);
   return (
     <div className="border border-slate-700 rounded-lg">
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-3 bg-slate-700/50">
+      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-3 bg-slate-700/50 hover:bg-slate-700 transition-colors">
         <h3 className="font-semibold text-slate-200">{title}</h3>
-        <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+        <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transform transition-transform ${isOpen ? '' : '-rotate-90'}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
       </button>
       {isOpen && <div className="p-3">{children}</div>}
     </div>
   );
 };
 
-
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSubmit, task, currentUser }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [estimatedTime, setEstimatedTime] = useState('01:00:00');
+  const [estimatedHours, setEstimatedHours] = useState(0);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(30);
   const [assignedTo, setAssignedTo] = useState(USERS[1]?.email || '');
   const [urlLink, setUrlLink] = useState('');
   const [newNote, setNewNote] = useState('');
@@ -53,14 +40,18 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
     if (isOpen && task) {
       setName(task.name);
       setDescription(task.description);
-      setEstimatedTime(formatTimeToHHMMSS(task.estimatedTime));
+      const hours = Math.floor(task.estimatedTime / 3600);
+      const minutes = Math.floor((task.estimatedTime % 3600) / 60);
+      setEstimatedHours(hours);
+      setEstimatedMinutes(Math.round(minutes / 5) * 5); // Round to nearest 5 for dropdown
       setAssignedTo(task.assignedTo);
       setUrlLink(task.urlLink || '');
     } else if (isOpen && !task) {
       // Reset for new task
       setName('');
       setDescription('');
-      setEstimatedTime('01:00:00');
+      setEstimatedHours(0);
+      setEstimatedMinutes(30);
       setAssignedTo(USERS[1]?.email || '');
       setUrlLink('');
     }
@@ -69,6 +60,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const commonData = { name, description, assignedTo, urlLink };
+    const estimatedTimeInSeconds = estimatedHours * 3600 + estimatedMinutes * 60;
     
     if (isEditing) {
         const updatedLogs: TaskLog[] = [...task.logs];
@@ -81,9 +73,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
         if (task.urlLink !== urlLink) {
             updatedLogs.push({ timestamp: Date.now(), user: currentUser.email, change: `URL link updated.` });
         }
-        onSubmit({ ...task, ...commonData, logs: updatedLogs });
+        if (task.estimatedTime !== estimatedTimeInSeconds) {
+            updatedLogs.push({ timestamp: Date.now(), user: currentUser.email, change: `Estimated time updated.` });
+        }
+        onSubmit({ ...task, ...commonData, estimatedTime: estimatedTimeInSeconds, logs: updatedLogs });
     } else {
-        onSubmit({ ...commonData, estimatedTime: parseHHMMSSToSeconds(estimatedTime) });
+        onSubmit({ ...commonData, estimatedTime: estimatedTimeInSeconds });
     }
   };
 
@@ -101,6 +96,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
 
 
   if (!isOpen) return null;
+
+  const hourOptions = [...Array(13).keys()]; // 0-12 hours
+  const minuteOptions = [...Array(12).keys()].map(m => m * 5); // 0, 5, 10... 55 minutes
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -133,8 +131,15 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="estimatedTime" className="block text-sm font-medium text-slate-400 mb-1">Estimated Time</label>
-              <input type="text" id="estimatedTime" value={estimatedTime} onChange={(e) => setEstimatedTime(e.target.value)} required disabled={isEditing} placeholder="HH:MM:SS" className="w-full input-style disabled:bg-slate-700/50" />
+              <label htmlFor="estimatedHours" className="block text-sm font-medium text-slate-400 mb-1">Estimated Time</label>
+              <div className="flex gap-2">
+                <select id="estimatedHours" value={estimatedHours} onChange={(e) => setEstimatedHours(Number(e.target.value))} required className="w-full input-style">
+                  {hourOptions.map(h => <option key={h} value={h}>{h.toString().padStart(2, '0')} hrs</option>)}
+                </select>
+                <select id="estimatedMinutes" value={estimatedMinutes} onChange={(e) => setEstimatedMinutes(Number(e.target.value))} required className="w-full input-style">
+                  {minuteOptions.map(m => <option key={m} value={m}>{m.toString().padStart(2, '0')} mins</option>)}
+                </select>
+              </div>
             </div>
             <div>
               <label htmlFor="assignedTo" className="block text-sm font-medium text-slate-400 mb-1">Assign To</label>
@@ -154,7 +159,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
                                 <p className="text-slate-300">{note.text}</p>
                                 <p className="text-xs text-slate-500 text-right"> - {note.user.split('@')[0]} on {new Date(note.timestamp).toLocaleDateString()}</p>
                             </div>
-                        )) : <p className="text-slate-500 text-sm">No notes yet.</p>}
+                        )).reverse() : <p className="text-slate-500 text-sm text-center py-4">No notes yet.</p>}
                     </div>
                      <div className="flex gap-2">
                         <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Add a new note..." className="w-full input-style" />
@@ -163,7 +168,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
                 </Section>
                 <Section title="Logs">
                     <ul className="space-y-1 text-xs text-slate-400 max-h-32 overflow-y-auto">
-                        {task.logs.map((log, index) => (
+                        {[...task.logs].reverse().map((log, index) => (
                             <li key={index}>
                                 <span className="font-mono text-cyan-400/70">[{new Date(log.timestamp).toLocaleString()}]</span> {log.user.split('@')[0]}: {log.change}
                             </li>
@@ -189,7 +194,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ isOpen, onClose, onSu
           }
           .input-style:focus {
             outline: none;
-            box-shadow: 0 0 0 2px #22d3ee;
+            border-color: #06b6d4;
+            box-shadow: 0 0 0 2px #22d3ee80;
           }
           .btn-primary {
             padding: 0.5rem 1rem;

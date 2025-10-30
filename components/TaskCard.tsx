@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Task, TaskStatus, User, UserRole } from '../types';
 
 interface TaskCardProps {
@@ -25,8 +25,11 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => {
   const colorClass = progress >= 80 ? 'bg-red-500' : 'bg-green-500';
 
   return (
-    <div className="w-full bg-slate-700 rounded-full h-2">
-      <div className={`${colorClass} h-2 rounded-full transition-all duration-500`} style={{ width: `${Math.min(progress, 100)}%` }}></div>
+    <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+      <div 
+        className={`${colorClass} h-2 rounded-full transition-width ease-linear duration-1000`} 
+        style={{ width: `${Math.min(progress, 100)}%` }}
+      ></div>
     </div>
   );
 };
@@ -39,17 +42,28 @@ const formatTime = (totalSeconds: number): string => {
 };
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, currentUser, onUpdate, onEdit, showNotification }) => {
+  const [now, setNow] = useState(() => Date.now());
+
   useEffect(() => {
     let interval: number | undefined;
     if (task.status === TaskStatus.STARTED) {
       interval = window.setInterval(() => {
-        onUpdate({ ...task, elapsedTime: task.elapsedTime + 1 });
+        setNow(Date.now());
       }, 1000);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [task, onUpdate]);
+  }, [task.status]);
+
+  const displayedElapsedTime = useMemo(() => {
+    if (task.status === TaskStatus.STARTED && task.startedAt) {
+      const sessionDuration = Math.max(0, Math.floor((now - task.startedAt) / 1000));
+      return task.elapsedTime + sessionDuration;
+    }
+    return task.elapsedTime;
+  }, [task.status, task.elapsedTime, task.startedAt, now]);
+
 
   const handleStart = () => {
     onUpdate({ 
@@ -61,10 +75,15 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, currentUser, onUpdate, onEdit
   };
   
   const handleEnd = () => {
+    const sessionDuration = task.startedAt ? Math.floor((Date.now() - task.startedAt) / 1000) : 0;
+    const finalElapsedTime = task.elapsedTime + sessionDuration;
+
     onUpdate({ 
       ...task, 
+      elapsedTime: finalElapsedTime,
       status: TaskStatus.REVIEW,
       completedAt: Date.now(),
+      startedAt: undefined, // Clear startedAt as the timing session is over
       logs: [...task.logs, { timestamp: Date.now(), user: currentUser.email, change: 'Task ended and sent for review.' }]
     });
     showNotification(`Task "${task.name}" submitted for review.`, 'success');
@@ -81,7 +100,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, currentUser, onUpdate, onEdit
     showNotification(`Task "${task.name}" approved.`, 'success');
   }
 
-  const progress = task.estimatedTime > 0 ? (task.elapsedTime / task.estimatedTime) * 100 : 0;
+  const progress = task.estimatedTime > 0 ? (displayedElapsedTime / task.estimatedTime) * 100 : 0;
   
   const assignedUser = useMemo(() => task.assignedTo.split('@')[0], [task.assignedTo]);
 
@@ -94,7 +113,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, currentUser, onUpdate, onEdit
           </div>
           <div className="my-3">
             <div className="flex justify-between text-sm font-mono mb-1">
-              <span className={progress >= 80 ? 'text-red-400' : 'text-green-400'}>{formatTime(task.elapsedTime)}</span>
+              <span className={progress >= 80 ? 'text-red-400' : 'text-green-400'}>{formatTime(displayedElapsedTime)}</span>
               <span className="text-slate-500">{formatTime(task.estimatedTime)}</span>
             </div>
             <ProgressBar progress={progress} />

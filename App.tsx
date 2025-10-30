@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Dashboard from './components/Dashboard';
 import Tasks from './components/Tasks';
@@ -88,19 +89,27 @@ export const App: React.FC = () => {
       setEditingTask(null);
   };
 
+  const handleDeleteTasks = (taskIds: string[]) => {
+    setTasks(prevTasks => prevTasks.filter(task => !taskIds.includes(task.id)));
+    showNotification(`${taskIds.length} task(s) deleted successfully!`, 'success');
+  };
+
   const renderContent = () => {
-    const nonArchivedTasks = tasks.filter(t => new Date(t.createdAt).toDateString() === new Date().toDateString());
-    const archivedTasks = tasks.filter(t => new Date(t.createdAt).toDateString() !== new Date().toDateString());
+    // The dashboard and tasks views get all tasks to provide a complete overview.
+    // The archive is specifically for completed tasks.
+    const archivedTasks = tasks.filter(task => task.status === TaskStatus.COMPLETED);
 
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard tasks={nonArchivedTasks} currentUser={currentUser} onUpdateTask={handleUpdateTask} onEditTask={handleEditTask} showNotification={showNotification} />;
+        // Pass all tasks to the dashboard so users can see their full board, including completed items.
+        return <Dashboard tasks={tasks} currentUser={currentUser} onUpdateTask={handleUpdateTask} onEditTask={handleEditTask} showNotification={showNotification} />;
       case 'tasks':
         return <Tasks tasks={tasks} onEditTask={handleEditTask} />;
       case 'reports':
         return <Reports tasks={tasks} />;
       case 'archive':
-        return <Archive tasks={archivedTasks} />;
+        // The archive view only shows tasks that are completed.
+        return <Archive tasks={archivedTasks} onDeleteTasks={handleDeleteTasks} />;
       default:
         return null;
     }
